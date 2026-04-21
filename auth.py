@@ -40,7 +40,13 @@ def _build_wrapper(required_scopes):
                         "required": list(needed),
                         "granted": sorted(key_scopes),
                     }), 403
-            user = col_users.find_one({"_id": ObjectId(rec["user_id"])}, {"password_hash": 0})
+            # Admin keys may delegate to another user via X-User-Id header
+            target_uid = rec["user_id"]
+            if "admin" in key_scopes:
+                override = (request.headers.get("X-User-Id") or "").strip()
+                if override and ObjectId.is_valid(override):
+                    target_uid = override
+            user = col_users.find_one({"_id": ObjectId(target_uid)}, {"password_hash": 0})
             if not user:
                 return jsonify({"ok": False, "error": "api key user not found"}), 401
             request.api_user = user
