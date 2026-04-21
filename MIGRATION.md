@@ -123,8 +123,11 @@ realty-line 中的呼叫點替換方式：
 - `_build_api_key_wrapper()`
 - `_hash_key()`
 - `_mask_key()`
-- `_verify_attempt_check()`
-- `col_api_keys`、`col_api_usage` collections
+- `col_api_keys` collection 定義與索引
+
+⚠️ **保留以下兩個：**
+- `_verify_attempt_check()`（行 1191）— 使用 `col_api_usage` 做登入嘗試 rate limiting，與 API key 無關
+- `col_api_usage` collection — 被 `_verify_attempt_check` 依賴，不能刪除
 
 ---
 
@@ -171,6 +174,20 @@ realty-line 中的呼叫點替換方式：
 
 ---
 
+## Phase 3.5：Webhook Endpoints（保留在 realty-line，不動）
+
+以下兩個 webhook 是 bridge 主動推送給 realty-line 的接收點，**不能刪除也不能移走**：
+
+| 路由 | 行號 | 用途 |
+|------|------|------|
+| `POST /api/_hook/state` | 654 | 接收 bridge 登入/登出狀態變化 |
+| `POST /api/_hook/messages` | 704 | 接收 bridge 批次推送訊息 |
+
+⚠️ 行 687 的 `_bridge_get("/me")` 在 state change webhook 中，改呼叫 `GET /v1/status`
+⚠️ 行 773 的 `_bridge_post("/send")` 在訊息回調 lambda 中，改呼叫 `POST /v1/send`
+
+---
+
 ## Phase 4：MongoDB Collections 策略
 
 兩個服務共用同一個 MongoDB（`realty_line` database）。
@@ -180,8 +197,8 @@ realty-line 中的呼叫點替換方式：
 | `col_line_cache` | line-api（從 bridge refresh） | line-api（/v1/contacts 等） | 留在 line-api |
 | `col_messages` | realty-line（bridge webhook） | realty-line（訊息頁） | 留在 realty-line |
 | `col_bridge_events` | realty-line（webhook） | 無（稽核用） | 留在 realty-line |
-| `col_api_keys` | line-api（key 管理） | line-api（認證） | 移到 line-api，realty-line 刪除 |
-| `col_api_usage` | line-api | line-api | 移到 line-api，realty-line 刪除 |
+| `col_api_keys` | line-api（key 管理） | line-api（認證） | 移到 line-api，realty-line 刪除定義 |
+| `col_api_usage` | line-api + realty-line 共用 | line-api + realty-line | **保留在兩邊**：realty-line 的 `_verify_attempt_check()` 仍需寫入此 collection |
 | `col_schedules` | realty-line + line-api 兩者都寫 | line-api（排程執行） | 統一由 line-api 執行，realty-line 呼叫 `/v1/schedule` |
 | `col_users` | 兩者共用 | 兩者共用 | 共用，不動 |
 
