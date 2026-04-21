@@ -364,5 +364,29 @@ def api_v1_messages():
     return jsonify({"ok": True, "count": len(rows), "messages": rows})
 
 
+@app.route("/")
+def index():
+    return jsonify({
+        "service": "LINE API",
+        "version": "1.0",
+        "endpoints": [
+            "GET  /v1/status",
+            "GET  /v1/qr",
+            "GET  /v1/qr-status",
+            "POST /v1/users/logout",
+            "POST /v1/login-password",
+            "POST /v1/login-password-verify",
+            "GET  /v1/contacts",
+            "GET  /v1/groups",
+            "POST /v1/send",
+            "POST /v1/send-image",
+            "POST /v1/broadcast",
+            "POST /v1/schedule",
+            "GET  /v1/messages",
+        ],
+        "auth": "X-API-Key: pk_...",
+    })
+
+
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 8000)), debug=False)
