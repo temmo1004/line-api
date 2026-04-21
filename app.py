@@ -364,6 +364,52 @@ def api_v1_messages():
     return jsonify({"ok": True, "count": len(rows), "messages": rows})
 
 
+@app.route("/v1/chats", methods=["GET"])
+@api_key_required("read")
+@limiter.limit("60 per minute")
+def api_v1_chats():
+    uid = request.api_user_id
+    try:
+        limit = min(int(request.args.get("limit", "100")), 500)
+    except (ValueError, TypeError):
+        return jsonify({"ok": False, "error": "invalid_limit"}), 400
+    pipeline = [
+        {"$match": {"user_id": uid}},
+        {"$sort": {"created_time": -1}},
+        {"$group": {
+            "_id": "$peer",
+            "last_text": {"$first": "$text"},
+            "last_time": {"$first": "$created_time"},
+            "last_content_type": {"$first": "$content_type"},
+            "count": {"$sum": 1},
+        }},
+        {"$sort": {"last_time": -1}},
+        {"$limit": limit},
+    ]
+    rows = list(col_messages.aggregate(pipeline))
+    cache = col_line_cache.find_one({"user_id": uid}) or {}
+    contacts = {c["mid"]: c for c in (cache.get("contacts") or [])}
+    chats = []
+    for r in rows:
+        peer = r["_id"]
+        c = contacts.get(peer) or {}
+        peer_name = c.get("name") or c.get("realName") or (peer or "")[-6:]
+        last_time = r.get("last_time")
+        try:
+            last_time = int(last_time) if last_time is not None else None
+        except Exception:
+            pass
+        chats.append({
+            "peer": peer,
+            "peer_name": peer_name,
+            "last_text": r.get("last_text"),
+            "last_time": last_time,
+            "last_content_type": r.get("last_content_type"),
+            "count": r.get("count", 0),
+        })
+    return jsonify({"ok": True, "chats": chats})
+
+
 @app.route("/")
 def index():
     return jsonify({
