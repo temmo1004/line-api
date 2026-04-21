@@ -60,6 +60,7 @@ def provision_user_bridge(user_id):
         col_users.update_one(
             {"_id": ObjectId(user_id)},
             {"$set": {"bridge_endpoint": endpoint, "bridge_token": token}},
+            upsert=True,
         )
         return endpoint, token
     except Exception as e:
