@@ -42,13 +42,28 @@ def _build_wrapper(required_scopes):
                     }), 403
             # Admin keys may delegate to another user via X-User-Id header
             target_uid = rec["user_id"]
+            x_user_id_delegated = False
             if "admin" in key_scopes:
                 override = (request.headers.get("X-User-Id") or "").strip()
                 if override and ObjectId.is_valid(override):
                     target_uid = override
+                    x_user_id_delegated = True
             user = col_users.find_one({"_id": ObjectId(target_uid)}, {"password_hash": 0})
             if not user:
-                return jsonify({"ok": False, "error": "api key user not found"}), 401
+                if x_user_id_delegated:
+                    # Auto-provision a stub document for this delegated user so
+                    # the bridge provisioning flow can run on first contact.
+                    try:
+                        col_users.insert_one({
+                            "_id": ObjectId(target_uid),
+                            "created_at": datetime.utcnow(),
+                            "source": "auto_provisioned",
+                        })
+                    except Exception:
+                        pass
+                    user = col_users.find_one({"_id": ObjectId(target_uid)}, {"password_hash": 0})
+                if not user:
+                    return jsonify({"ok": False, "error": "api key user not found"}), 401
             request.api_user = user
             request.api_user_id = str(user["_id"])
             request.api_key_id = str(rec["_id"])
