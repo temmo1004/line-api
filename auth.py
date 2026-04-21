@@ -30,7 +30,7 @@ def _build_wrapper(required_scopes):
             rec = col_api_keys.find_one({"key_hash": h, "revoked_at": {"$exists": False}})
             if not rec:
                 return jsonify({"ok": False, "error": "invalid or revoked api key"}), 401
-            key_scopes = set(rec.get("scopes") or ["send", "read", "admin"])
+            key_scopes = set(rec.get("scopes") or ["send", "read"])
             if required_scopes:
                 needed = set(required_scopes)
                 if "admin" not in key_scopes and not needed.issubset(key_scopes):
