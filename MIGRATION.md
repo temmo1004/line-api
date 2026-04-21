@@ -76,7 +76,7 @@ def _lineapi_post(path, payload, timeout=30, user_id=None):
 |------------|---------------------|-----------|
 | `/status` | `GET /v1/qr-status` | 187, 1138, 2761, 4557 |
 | `/qr-canvas` | `GET /v1/qr` | 1113, 2789 |
-| `/refresh-qr` | `POST /v1/qr` (body: `{refresh:1}`) | 1109, 2751 |
+| `/refresh-qr` | `GET /v1/qr?refresh=1` | 1109, 2751 |
 | `/login-password` | `POST /v1/login-password` | 1182, 1250 |
 | `/login-password-verify` | `POST /v1/login-password-verify` | 1230, 1285 |
 | `/logout` | `POST /v1/users/logout` | 326, 1156, 2815 |
@@ -197,9 +197,9 @@ realty-line 中的呼叫點替換方式：
 | `col_line_cache` | line-api（從 bridge refresh） | line-api（/v1/contacts 等） | 留在 line-api |
 | `col_messages` | realty-line（bridge webhook） | realty-line（訊息頁） | 留在 realty-line |
 | `col_bridge_events` | realty-line（webhook） | 無（稽核用） | 留在 realty-line |
-| `col_api_keys` | line-api（key 管理） | line-api（認證） | 移到 line-api，realty-line 刪除定義 |
-| `col_api_usage` | line-api + realty-line 共用 | line-api + realty-line | **保留在兩邊**：realty-line 的 `_verify_attempt_check()` 仍需寫入此 collection |
-| `col_schedules` | realty-line + line-api 兩者都寫 | line-api（排程執行） | 統一由 line-api 執行，realty-line 呼叫 `/v1/schedule` |
+| `col_api_keys` | 兩者共用同一 collection | line-api（認證）、realty-line（CRUD UI） | 共用 collection；realty-line 的 `/api/keys/*` 直接讀寫，line-api 做認證 |
+| `col_api_usage` | line-api + realty-line 共用 | line-api + realty-line | **保留在兩邊**：realty-line 的 `_verify_attempt_check()` 仍需寫入 |
+| `col_schedules` | 兩者共用 | realty-line 寫入、realty-line 執行排程 | **排程執行暫留 realty-line**（`_run_scheduled_posts` + APScheduler）；line-api 只提供寫入 endpoint |
 | `col_users` | 兩者共用 | 兩者共用 | 共用，不動 |
 
 ---
@@ -214,14 +214,26 @@ realty-line 中的呼叫點替換方式：
 
 ---
 
+## 已知設計決策
+
+| 項目 | 決策 | 原因 |
+|------|------|------|
+| API key CRUD (`/api/keys/*`) | 保留在 realty-line | 用 `@login_required`（cookie），是 UI 管理介面；兩服務共用 `col_api_keys` collection |
+| 排程執行 (`_run_scheduled_posts`) | 保留在 realty-line | 依賴 `col_contact_meta`、`col_users` 等 realty-line 專屬 collection；未來視需求再移 |
+| `col_api_usage` | 兩邊共用 | realty-line 的 `_verify_attempt_check` 用它做 rate limiting |
+| `/refresh-qr` 替換方式 | `GET /v1/qr?refresh=1` | line-api 的 `/v1/qr` 是 GET，透過 query string 觸發 refresh |
+
+---
+
 ## 執行順序
 
 - [ ] Phase 1：line-api 確認上線穩定
 - [ ] Phase 2-A：加入 `_lineapi_get` / `_lineapi_post` helper
-- [ ] Phase 2-B：替換 38 個 bridge 呼叫點
-- [ ] Phase 2-C：處理 provision 邏輯
-- [ ] Phase 2-D：刪除 realty-line 內的 /v1/* 路由
+- [ ] Phase 2-B：替換 38 個 bridge 呼叫點（含 `/refresh-qr` → `GET /v1/qr?refresh=1`）
+- [ ] Phase 2-C：處理 provision 邏輯（`_resolve_bridge` / `_provision_user_bridge` 移除）
+- [ ] Phase 2-D：刪除 realty-line 內的 /v1/* 路由 + `api_key_required` decorator
 - [ ] Phase 2-E：更新 /api/* 路由
 - [ ] Phase 3：Zeabur 環境變數調整
+- [ ] Phase 3.5：確認 webhook endpoints 內的 bridge 呼叫也已替換
 - [ ] Phase 4：確認 collections 讀寫正確
 - [ ] Phase 5：E2EE（暫緩）
