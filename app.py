@@ -364,6 +364,34 @@ def api_v1_messages():
     return jsonify({"ok": True, "count": len(rows), "messages": rows})
 
 
+@app.route("/v1/_bootstrap-key", methods=["POST"])
+def bootstrap_key():
+    """One-time bootstrap: create first API key. Requires BOOTSTRAP_SECRET env var."""
+    secret = os.environ.get("BOOTSTRAP_SECRET", "")
+    if not secret:
+        return jsonify({"ok": False, "error": "not_available"}), 404
+    data = request.get_json(force=True) or {}
+    if data.get("secret") != secret:
+        return jsonify({"ok": False, "error": "forbidden"}), 403
+    email = (data.get("email") or "").strip()
+    user = col_users.find_one({"email": email}) if email else col_users.find_one({})
+    if not user:
+        return jsonify({"ok": False, "error": "no_user_found"}), 404
+    uid = str(user["_id"])
+    import hashlib, secrets as _sec
+    raw = _sec.token_urlsafe(32)
+    plaintext = f"pk_live_{raw}"
+    key_hash = hashlib.sha256(plaintext.encode()).hexdigest()
+    col_api_keys.insert_one({
+        "user_id": uid,
+        "key_hash": key_hash,
+        "scopes": ["read", "send", "admin"],
+        "label": data.get("label", "realty-line system"),
+        "created_at": datetime.utcnow(),
+    })
+    return jsonify({"ok": True, "key": plaintext, "user_id": uid, "email": user.get("email")})
+
+
 @app.route("/")
 def index():
     return jsonify({
