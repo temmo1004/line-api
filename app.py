@@ -220,6 +220,28 @@ def api_v1_contacts():
     return jsonify({"ok": True, "count": len(contacts), "contacts": contacts})
 
 
+@app.route("/v1/contacts/refresh", methods=["POST"])
+@api_key_required("read")
+@limiter.limit("10 per minute")
+def api_v1_contacts_refresh():
+    uid = request.api_user_id
+    try:
+        r = bridge_get("/contacts", timeout=30, user_id=uid)
+        if not r.ok:
+            return jsonify({"ok": False, "error": "bridge_error"}), 502
+        data = r.json()
+        contacts = data.get("contacts") or []
+        col_line_cache.update_one(
+            {"user_id": uid},
+            {"$set": {"contacts": contacts, "updated_at": datetime.utcnow()}},
+            upsert=True,
+        )
+        return jsonify({"ok": True, "contacts_count": len(contacts)})
+    except Exception as e:
+        logging.warning("[v1/contacts/refresh] uid=%s: %s", uid, e)
+        return jsonify({"ok": False, "error": "bridge_unreachable"}), 503
+
+
 @app.route("/v1/groups", methods=["GET"])
 @api_key_required("read")
 @limiter.limit("30 per minute")
@@ -352,7 +374,14 @@ def api_v1_messages():
     q = {"user_id": uid}
     if peer:
         q["peer"] = peer
-    rows = list(col_messages.find(q, {"_id": 0, "user_id": 0}).sort("created_time", -1).limit(limit))
+    since = request.args.get("since")
+    if since:
+        try:
+            q["created_time"] = {"$gt": int(since)}
+        except (ValueError, TypeError):
+            pass
+    sort_order = 1 if since else -1
+    rows = list(col_messages.find(q, {"_id": 0, "user_id": 0}).sort("created_time", sort_order).limit(limit))
     for r in rows:
         if r.get("created_time") is not None:
             try:

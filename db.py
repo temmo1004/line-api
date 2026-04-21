@@ -4,7 +4,8 @@ from pymongo import MongoClient
 MONGO_URI = os.environ.get("MONGO_URI", "mongodb://localhost:27017")
 
 _mongo = MongoClient(MONGO_URI)
-db = _mongo.get_database("realty_line")  # shared DB with realty-line
+_db_name = os.environ.get("MONGO_DB_NAME", "realty_line")
+db = _mongo.get_database(_db_name)
 
 col_users      = db["users"]
 col_api_keys   = db["api_keys"]

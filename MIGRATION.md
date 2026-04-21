@@ -70,11 +70,11 @@ def _lineapi_post(path, payload, timeout=30, user_id=None):
 
 ### 2-B 所有 `_bridge_post` / `_bridge_get` 替換清單
 
-共 38 個呼叫點，依 bridge 路徑對應：
+共 39 個呼叫點，依 bridge 路徑對應：
 
 | Bridge 路徑 | → line-api endpoint | 呼叫點行號 |
 |------------|---------------------|-----------|
-| `/status` | `GET /v1/qr-status` | 187, 1138, 2761, 4557 |
+| `/status` | `GET /v1/qr-status` | 187, 1138, 2738, 2761, 4557 |
 | `/qr-canvas` | `GET /v1/qr` | 1113, 2789 |
 | `/refresh-qr` | `GET /v1/qr?refresh=1` | 1109, 2751 |
 | `/login-password` | `POST /v1/login-password` | 1182, 1250 |
@@ -219,9 +219,11 @@ realty-line 中的呼叫點替換方式：
 | 項目 | 決策 | 原因 |
 |------|------|------|
 | API key CRUD (`/api/keys/*`) | 保留在 realty-line | 用 `@login_required`（cookie），是 UI 管理介面；兩服務共用 `col_api_keys` collection |
-| 排程執行 (`_run_scheduled_posts`) | 保留在 realty-line | 依賴 `col_contact_meta`、`col_users` 等 realty-line 專屬 collection；未來視需求再移 |
+| 排程執行 (`_run_scheduled_posts`) | 保留在 realty-line | 依賴 `col_tag_map`（黑名單）、`col_line_cache`（聯絡人名稱）、`col_users`、`col_schedules`，均為 realty-line 專屬；未來視需求再移 |
 | `col_api_usage` | 兩邊共用 | realty-line 的 `_verify_attempt_check` 用它做 rate limiting |
 | `/refresh-qr` 替換方式 | `GET /v1/qr?refresh=1` | line-api 的 `/v1/qr` 是 GET，透過 query string 觸發 refresh |
+| bridge `WEBHOOK_URL` 方向 | 維持指向 realty-line | bridge 主動 push 給 realty-line 的 `/api/_hook/state` 和 `/api/_hook/messages`；line-api 不需要接收這些 webhook，不改 `WEBHOOK_URL` |
+| `MONGO_DB_NAME`（line-api） | 建議改用 env var | line-api/db.py 目前硬編碼 `"realty_line"`；上線後如需多環境應改 `os.environ.get("MONGO_DB_NAME", "realty_line")` |
 
 ---
 
