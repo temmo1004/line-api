@@ -239,7 +239,7 @@ def api_v1_contacts_refresh():
         return jsonify({"ok": True, "contacts_count": len(contacts)})
     except Exception as e:
         logging.warning("[v1/contacts/refresh] uid=%s: %s", uid, e)
-        return jsonify({"ok": False, "error": "bridge_unreachable"}), 503
+        return jsonify({"ok": False, "error": "bridge_unreachable", "detail": str(e), "type": type(e).__name__}), 503
 
 
 @app.route("/v1/groups", methods=["GET"])
