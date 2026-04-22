@@ -559,6 +559,36 @@ def api_v1_messages_sync():
     return jsonify({"ok": True, "fetched": len(raw_msgs), "upserted": count})
 
 
+@app.route("/v1/messages/load-chat", methods=["POST"])
+@api_key_required("read")
+@limiter.limit("10 per minute")
+def api_v1_messages_load_chat():
+    """Navigate bridge to a specific chat, scroll up to load history, then sync."""
+    uid = request.api_user_id
+    user = col_users.find_one({"_id": ObjectId(uid)})
+    self_mid = (user or {}).get("line_mid", "").strip()
+    if not self_mid:
+        return jsonify({"ok": False, "error": "line_mid not set"}), 400
+    body = request.get_json(force=True) or {}
+    chat_id = (body.get("chat_id") or "").strip()
+    scrolls = min(int(body.get("scrolls", 15)), 40)
+    if not chat_id:
+        return jsonify({"ok": False, "error": "chat_id required"}), 400
+    # Tell bridge to navigate + scroll
+    r = bridge_post("/messages/load-more", {"chat_id": chat_id, "scrolls": scrolls},
+                    timeout=60, user_id=uid)
+    if not r.ok:
+        return jsonify({"ok": False, "error": "bridge_error", "status": r.status_code}), 502
+    info = r.json() if r.ok else {}
+    # Now sync all messages for this chat
+    r2 = bridge_get(f"/messages?chat_id={chat_id}&limit=2000", timeout=30, user_id=uid)
+    raw = extract_list(r2, "messages") if r2.ok else []
+    upserted = _ingest_messages(uid, raw, self_mid) if isinstance(raw, list) else 0
+    return jsonify({"ok": True, "chat_id": chat_id, "scrolls": scrolls,
+                    "chat_messages": info.get("chat_messages", 0),
+                    "fetched": len(raw), "upserted": upserted})
+
+
 @app.route("/v1/messages/load-history", methods=["POST"])
 @api_key_required("read")
 @limiter.limit("3 per minute")
