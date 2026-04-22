@@ -230,7 +230,7 @@ def api_v1_contacts_refresh():
         if not r.ok:
             return jsonify({"ok": False, "error": "bridge_error"}), 502
         data = r.json()
-        contacts = data.get("contacts") or []
+        contacts = data if isinstance(data, list) else (data.get("contacts") or [])
         col_line_cache.update_one(
             {"user_id": uid},
             {"$set": {"contacts": contacts, "updated_at": datetime.utcnow()}},
@@ -239,7 +239,7 @@ def api_v1_contacts_refresh():
         return jsonify({"ok": True, "contacts_count": len(contacts)})
     except Exception as e:
         logging.warning("[v1/contacts/refresh] uid=%s: %s", uid, e)
-        return jsonify({"ok": False, "error": "bridge_unreachable", "detail": str(e), "type": type(e).__name__}), 503
+        return jsonify({"ok": False, "error": "bridge_unreachable"}), 503
 
 
 @app.route("/v1/groups", methods=["GET"])
