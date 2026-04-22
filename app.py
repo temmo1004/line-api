@@ -465,23 +465,37 @@ def index():
     return jsonify({
         "service": "LINE API",
         "version": "1.0",
+        "auth": "X-API-Key: pk_...  (admin key 可加 X-User-Id 委派)",
+        "docs": "/docs",
         "endpoints": [
-            "GET  /v1/status",
-            "GET  /v1/qr",
-            "GET  /v1/qr-status",
-            "POST /v1/users/logout",
-            "POST /v1/login-password",
-            "POST /v1/login-password-verify",
-            "GET  /v1/contacts",
-            "GET  /v1/groups",
-            "POST /v1/send",
-            "POST /v1/send-image",
-            "POST /v1/broadcast",
-            "POST /v1/schedule",
-            "GET  /v1/messages",
+            {"method": "GET",  "path": "/v1/status",                  "scope": "read",  "desc": "LINE 連線狀態"},
+            {"method": "GET",  "path": "/v1/qr",                      "scope": "admin", "desc": "QR code 圖片 (PNG)，?refresh=1 強制重整"},
+            {"method": "GET",  "path": "/v1/qr-status",               "scope": "read",  "desc": "QR 登入狀態 (waiting/pin_required/logged_in)"},
+            {"method": "POST", "path": "/v1/login-password",          "scope": "admin", "desc": "密碼登入", "body": {"email": "str", "password": "str"}},
+            {"method": "POST", "path": "/v1/login-password-verify",   "scope": "admin", "desc": "簡訊驗證碼", "body": {"code": "str"}},
+            {"method": "POST", "path": "/v1/users/logout",            "scope": "admin", "desc": "登出 LINE"},
+            {"method": "GET",  "path": "/v1/contacts",                "scope": "read",  "desc": "從快取讀取聯絡人"},
+            {"method": "POST", "path": "/v1/contacts/refresh",        "scope": "read",  "desc": "從 bridge 更新聯絡人快取"},
+            {"method": "GET",  "path": "/v1/groups",                  "scope": "read",  "desc": "從快取讀取群組"},
+            {"method": "POST", "path": "/v1/groups/refresh",          "scope": "read",  "desc": "從 bridge 更新群組快取"},
+            {"method": "GET",  "path": "/v1/messages",                "scope": "read",  "desc": "訊息記錄", "params": {"peer": "MID (選)", "limit": "int 最多200", "since": "Unix ms"}},
+            {"method": "GET",  "path": "/v1/chats",                   "scope": "read",  "desc": "聊天列表含名稱", "params": {"limit": "int 最多500"}},
+            {"method": "POST", "path": "/v1/send",                    "scope": "send",  "desc": "傳送文字", "body": {"to": "MID", "text": "str"}},
+            {"method": "POST", "path": "/v1/send-image",              "scope": "send",  "desc": "傳送圖片", "body": {"to": "MID", "image_base64": "str", "mime_type": "選"}},
+            {"method": "POST", "path": "/v1/broadcast",               "scope": "send",  "desc": "批次傳送 (最多50)", "body": {"to": ["MID"], "text": "str"}},
+            {"method": "POST", "path": "/v1/schedule",                "scope": "send",  "desc": "排程傳送 (台灣時間)", "body": {"to": ["MID"], "text": "str", "send_at": "ISO datetime"}},
         ],
-        "auth": "X-API-Key: pk_...",
     })
+
+
+@app.route("/docs")
+def docs():
+    import pathlib
+    md = pathlib.Path(__file__).parent / "API.md"
+    if md.exists():
+        from flask import Response
+        return Response(md.read_text(encoding="utf-8"), mimetype="text/markdown; charset=utf-8")
+    return jsonify({"ok": False, "error": "docs not found"}), 404
 
 
 if __name__ == "__main__":
