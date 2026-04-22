@@ -475,10 +475,11 @@ def api_v1_chats():
     rows = list(col_messages.aggregate(pipeline))
     cache = col_line_cache.find_one({"user_id": uid}) or {}
     contacts = {c["mid"]: c for c in (cache.get("contacts") or []) if c.get("mid")}
+    groups   = {g["mid"]: g for g in (cache.get("groups")   or []) if g.get("mid")}
     chats = []
     for r in rows:
         peer = r["_id"]
-        c = contacts.get(peer) or {}
+        c = contacts.get(peer) or groups.get(peer) or {}
         peer_name = c.get("name") or c.get("realName") or (peer or "")[-6:]
         last_time = r.get("last_time")
         try:
