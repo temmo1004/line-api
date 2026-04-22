@@ -709,6 +709,23 @@ def api_v1_fix_peer():
     return jsonify({"ok": True, "self_mid": self_mid, "broken": len(broken), "fixed": fixed})
 
 
+@app.route("/v1/image/<message_id>")
+@api_key_required("read")
+@limiter.limit("60 per minute")
+def api_v1_image(message_id):
+    """Proxy an image from the bridge (bridge navigates to chat, reads decrypted blob)."""
+    uid = request.api_user_id
+    chat_id = (request.args.get("chat_id") or "").strip()
+    if not chat_id:
+        return jsonify({"ok": False, "error": "chat_id required"}), 400
+    import requests as _req
+    from flask import Response
+    r = bridge_get(f"/image/{message_id}?chat_id={chat_id}", timeout=30, user_id=uid)
+    if r.ok:
+        return Response(r.content, content_type=r.headers.get("Content-Type", "image/jpeg"))
+    return jsonify({"ok": False, "error": "image_not_found"}), 404
+
+
 @app.route("/")
 def index():
     return jsonify({
