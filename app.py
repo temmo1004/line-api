@@ -559,6 +559,57 @@ def api_v1_messages_sync():
     return jsonify({"ok": True, "fetched": len(raw_msgs), "upserted": count})
 
 
+@app.route("/v1/messages/load-history", methods=["POST"])
+@api_key_required("read")
+@limiter.limit("3 per minute")
+def api_v1_messages_load_history():
+    """Navigate bridge to each chat to load full message history, then sync to DB."""
+    uid = request.api_user_id
+    user = col_users.find_one({"_id": ObjectId(uid)})
+    self_mid = (user or {}).get("line_mid", "").strip()
+    if not self_mid:
+        return jsonify({"ok": False, "error": "line_mid not set"}), 400
+
+    cache = col_line_cache.find_one({"user_id": uid}) or {}
+    contacts = [c for c in (cache.get("contacts") or []) if c.get("mid")]
+    groups   = [g for g in (cache.get("groups")   or []) if g.get("mid")]
+    # Use chats already in DB as priority + contacts/groups
+    known_peers = list(col_messages.distinct("peer", {"user_id": uid}))
+    # Build unique peer list: known chats first (most recent activity), then all contacts & groups
+    all_peers = list(dict.fromkeys(known_peers +
+                                   [c["mid"] for c in contacts] +
+                                   [g["mid"] for g in groups]))
+    body = request.get_json(force=True) or {}
+    max_peers = min(int(body.get("max_peers", 50)), 200)
+    per_chat  = min(int(body.get("per_chat",  500)), 2000)
+    all_peers = all_peers[:max_peers]
+
+    total_fetched = 0
+    total_upserted = 0
+    for peer_mid in all_peers:
+        r = bridge_get(f"/messages?chat_id={peer_mid}&limit={per_chat}", timeout=15, user_id=uid)
+        if not r.ok:
+            continue
+        raw = extract_list(r, "messages")
+        if not isinstance(raw, list):
+            continue
+        total_fetched  += len(raw)
+        total_upserted += _ingest_messages(uid, raw, self_mid)
+
+    # Also grab everything in Redux state (other chats may have loaded)
+    r2 = bridge_get(f"/messages?limit=5000", timeout=30, user_id=uid)
+    if r2.ok:
+        raw2 = extract_list(r2, "messages")
+        if isinstance(raw2, list):
+            extra = _ingest_messages(uid, raw2, self_mid)
+            total_upserted += extra
+
+    logging.info("[load-history] uid=%s peers=%d fetched=%d upserted=%d",
+                 uid, len(all_peers), total_fetched, total_upserted)
+    return jsonify({"ok": True, "peers_queried": len(all_peers),
+                    "fetched": total_fetched, "upserted": total_upserted})
+
+
 @app.route("/api/_hook/messages", methods=["POST"])
 @limiter.limit("300 per minute")
 def api_hook_messages():
