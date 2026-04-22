@@ -36,6 +36,29 @@ def bridge_post(path, payload, timeout=30, user_id=None):
     return requests.post(f"{endpoint}{path}", json=payload, headers=_headers(token), timeout=timeout)
 
 
+def extract_list(response, key="items"):
+    """Normalize bridge list responses.
+
+    Bridge endpoints like /contacts and /groups return a bare JSON array,
+    not {"contacts": [...]}. This helper handles both shapes so callers
+    never need isinstance() checks.
+
+    Returns a plain Python list, or [] on any failure.
+    """
+    try:
+        data = response.json()
+    except Exception:
+        return []
+    if isinstance(data, list):
+        return data
+    if isinstance(data, dict):
+        # Try the given key, then common fallbacks
+        for k in (key, "contacts", "groups", "items", "data", "results"):
+            if isinstance(data.get(k), list):
+                return data[k]
+    return []
+
+
 def provision_user_bridge(user_id):
     """Spawn a bridge container for the user via orchestrator. Returns (endpoint, token) or None."""
     if not ORCHESTRATOR_URL or not ORCHESTRATOR_TOKEN:

@@ -19,7 +19,7 @@ from db import (
 from auth import api_key_required
 from bridge import (
     bridge_get, bridge_post, resolve_bridge,
-    provision_user_bridge, strip_data_uri,
+    provision_user_bridge, strip_data_uri, extract_list,
     LINE_BRIDGE_URL,
 )
 
@@ -229,8 +229,7 @@ def api_v1_contacts_refresh():
         r = bridge_get("/contacts", timeout=30, user_id=uid)
         if not r.ok:
             return jsonify({"ok": False, "error": "bridge_error"}), 502
-        data = r.json()
-        contacts = data if isinstance(data, list) else (data.get("contacts") or [])
+        contacts = extract_list(r, "contacts")
         col_line_cache.update_one(
             {"user_id": uid},
             {"$set": {"contacts": contacts, "updated_at": datetime.utcnow()}},
@@ -261,8 +260,7 @@ def api_v1_groups_refresh():
         r = bridge_get("/groups", timeout=30, user_id=uid)
         if not r.ok:
             return jsonify({"ok": False, "error": "bridge_error"}), 502
-        data = r.json()
-        groups = data if isinstance(data, list) else (data.get("groups") or [])
+        groups = extract_list(r, "groups")
         col_line_cache.update_one(
             {"user_id": uid},
             {"$set": {"groups": groups, "updated_at": datetime.utcnow()}},
