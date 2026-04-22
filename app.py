@@ -513,16 +513,17 @@ def _ingest_messages(uid, raw_msgs, self_mid):
         else:
             peer = from_mid
         doc = {
-            "user_id":      uid,
-            "id":           str(m.get("id") or ""),
-            "from":         from_mid,
-            "to":           to_mid,
-            "to_type":      to_type,
-            "peer":         peer,
-            "text":         m.get("text"),
-            "content_type": m.get("content_type"),
-            "created_time": int(m["created_time"]) if m.get("created_time") else None,
-            "synced_at":    datetime.utcnow(),
+            "user_id":          uid,
+            "id":               str(m.get("id") or ""),
+            "from":             from_mid,
+            "to":               to_mid,
+            "to_type":          to_type,
+            "peer":             peer,
+            "text":             m.get("text"),
+            "content_type":     m.get("content_type"),
+            "content_metadata": m.get("content_metadata") or None,
+            "created_time":     int(m["created_time"]) if m.get("created_time") else None,
+            "synced_at":        datetime.utcnow(),
         }
         ops.append(UpdateOne(
             {"user_id": uid, "id": doc["id"]},
