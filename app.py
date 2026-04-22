@@ -496,6 +496,89 @@ def api_v1_chats():
     return jsonify({"ok": True, "chats": chats})
 
 
+def _ingest_messages(uid, raw_msgs, self_mid):
+    """Upsert a list of bridge messages into col_messages with correct peer."""
+    from pymongo import UpdateOne
+    ops = []
+    for m in raw_msgs:
+        from_mid = m.get("from") or ""
+        to_mid   = m.get("to") or ""
+        to_type  = m.get("to_type", 1)
+        # peer: for group messages peer=group MID; for 1:1 peer=the other party
+        if to_type == 2 or to_mid.startswith("C"):
+            peer = to_mid
+        elif from_mid == self_mid:
+            peer = to_mid
+        else:
+            peer = from_mid
+        doc = {
+            "user_id":      uid,
+            "id":           str(m.get("id") or ""),
+            "from":         from_mid,
+            "to":           to_mid,
+            "to_type":      to_type,
+            "peer":         peer,
+            "text":         m.get("text"),
+            "content_type": m.get("content_type"),
+            "created_time": int(m["created_time"]) if m.get("created_time") else None,
+            "synced_at":    datetime.utcnow(),
+        }
+        ops.append(UpdateOne(
+            {"user_id": uid, "id": doc["id"]},
+            {"$set": doc},
+            upsert=True,
+        ))
+    if ops:
+        col_messages.bulk_write(ops, ordered=False)
+    return len(ops)
+
+
+@app.route("/v1/messages/sync", methods=["POST"])
+@api_key_required("read")
+@limiter.limit("10 per minute")
+def api_v1_messages_sync():
+    """Pull message history from bridge and upsert into DB (incl. groups)."""
+    uid = request.api_user_id
+    user = col_users.find_one({"_id": ObjectId(uid)})
+    self_mid = (user or {}).get("line_mid", "").strip()
+    if not self_mid:
+        return jsonify({"ok": False, "error": "line_mid not set"}), 400
+    try:
+        limit = min(int(request.args.get("limit", "500")), 2000)
+    except (ValueError, TypeError):
+        limit = 500
+    r = bridge_get(f"/messages?limit={limit}", timeout=30, user_id=uid)
+    if not r.ok:
+        return jsonify({"ok": False, "error": "bridge_error", "status": r.status_code}), 502
+    raw_msgs = extract_list(r, "messages")
+    if not isinstance(raw_msgs, list):
+        raw_msgs = []
+    count = _ingest_messages(uid, raw_msgs, self_mid)
+    logging.info("[messages/sync] uid=%s fetched=%d upserted=%d", uid, len(raw_msgs), count)
+    return jsonify({"ok": True, "fetched": len(raw_msgs), "upserted": count})
+
+
+@app.route("/api/_hook/messages", methods=["POST"])
+@limiter.limit("300 per minute")
+def api_hook_messages():
+    """Bridge pushes real-time message events here."""
+    auth = request.headers.get("Authorization", "")
+    token = auth[len("Bearer "):].strip() if auth.startswith("Bearer ") else ""
+    if not token:
+        return jsonify({"ok": False, "error": "unauthorized"}), 401
+    user = col_users.find_one({"bridge_token": token})
+    if not user:
+        return jsonify({"ok": False, "error": "unauthorized"}), 401
+    uid = str(user["_id"])
+    self_mid = (user.get("line_mid") or "").strip()
+    data = request.get_json(force=True) or {}
+    msgs = data.get("messages") or data.get("items") or []
+    if isinstance(data, dict) and "id" in data:
+        msgs = [data]
+    count = _ingest_messages(uid, msgs, self_mid)
+    return jsonify({"ok": True, "stored": count})
+
+
 @app.route("/api/_hook/state", methods=["POST"])
 @limiter.limit("60 per minute")
 def api_hook_state():
