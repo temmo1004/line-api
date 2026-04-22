@@ -91,6 +91,32 @@ def _verify_attempt_check(uid, limit=5, window_seconds=600):
 
 # ── Routes ───────────────────────────────────────────────────────────────────
 
+def _sync_profile_from_bridge(uid):
+    """Fetch /me from bridge and persist line_mid + profile if not yet stored."""
+    try:
+        r = bridge_get("/me", timeout=8, user_id=uid)
+        if not r.ok:
+            return
+        me = r.json()
+        if not isinstance(me, dict):
+            return
+        mid = (me.get("mid") or "").strip()
+        if not mid:
+            return
+        col_users.update_one(
+            {"_id": ObjectId(uid)},
+            {"$set": {"line_mid": mid}},
+        )
+        col_line_cache.update_one(
+            {"user_id": uid},
+            {"$set": {"profile": me}},
+            upsert=True,
+        )
+        logging.info("[sync_profile] uid=%s mid=%s", uid, mid)
+    except Exception as e:
+        logging.warning("[sync_profile] uid=%s: %s", uid, e)
+
+
 @app.route("/v1/status", methods=["GET"])
 @api_key_required("read")
 @limiter.limit("60 per minute")
@@ -99,12 +125,18 @@ def api_v1_status():
     u = col_users.find_one({"_id": ObjectId(uid)}, {"line_status": 1, "line_status_at": 1, "line_mid": 1, "bridge_endpoint": 1})
     cache = col_line_cache.find_one({"user_id": uid}, {"profile": 1}) or {}
     profile = cache.get("profile") or {}
+    line_mid = (u or {}).get("line_mid") or profile.get("mid") or None
+    # Auto-heal: if logged in but no MID stored, fetch from bridge
+    if not line_mid and (u or {}).get("line_status") == "logged_in":
+        _sync_profile_from_bridge(uid)
+        u = col_users.find_one({"_id": ObjectId(uid)}, {"line_status": 1, "line_status_at": 1, "line_mid": 1})
+        line_mid = (u or {}).get("line_mid") or None
     return jsonify({
         "ok": True,
         "line_logged_in": (u or {}).get("line_status") == "logged_in",
         "line_status": (u or {}).get("line_status") or "unknown",
         "line_status_at": (u["line_status_at"].isoformat() if u and isinstance(u.get("line_status_at"), datetime) else None),
-        "line_mid": (u or {}).get("line_mid") or profile.get("mid") or None,
+        "line_mid": line_mid,
         "line_name": profile.get("displayName") or profile.get("name") or None,
         "provisioned": bool((u or {}).get("bridge_endpoint")),
     })
