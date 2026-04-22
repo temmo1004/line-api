@@ -492,6 +492,30 @@ def api_v1_chats():
     return jsonify({"ok": True, "chats": chats})
 
 
+@app.route("/api/_hook/state", methods=["POST"])
+@limiter.limit("60 per minute")
+def api_hook_state():
+    """Bridge pushes state-change events here (same pattern as line-codex)."""
+    auth = request.headers.get("Authorization", "")
+    token = auth[len("Bearer "):].strip() if auth.startswith("Bearer ") else ""
+    if not token:
+        return jsonify({"ok": False, "error": "unauthorized"}), 401
+    user = col_users.find_one({"bridge_token": token})
+    if not user:
+        return jsonify({"ok": False, "error": "unauthorized"}), 401
+    uid = str(user["_id"])
+    data = request.get_json(force=True) or {}
+    new_state = data.get("to") or data.get("state")
+    col_users.update_one(
+        {"_id": user["_id"]},
+        {"$set": {"line_status": new_state, "line_status_at": datetime.utcnow()}},
+    )
+    if new_state == "logged_in" and not user.get("line_mid"):
+        _sync_profile_from_bridge(uid)
+    logging.info("[hook/state] uid=%s → %s", uid, new_state)
+    return jsonify({"ok": True})
+
+
 @app.route("/")
 def index():
     return jsonify({
