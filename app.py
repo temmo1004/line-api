@@ -262,6 +262,8 @@ def api_v1_contacts_refresh():
         if not r.ok:
             return jsonify({"ok": False, "error": "bridge_error"}), 502
         contacts = extract_list(r, "contacts")
+        if not contacts:
+            return jsonify({"ok": False, "error": "bridge_returned_empty", "hint": "bridge may still be initializing"}), 503
         col_line_cache.update_one(
             {"user_id": uid},
             {"$set": {"contacts": contacts, "updated_at": datetime.utcnow()}},
@@ -293,6 +295,8 @@ def api_v1_groups_refresh():
         if not r.ok:
             return jsonify({"ok": False, "error": "bridge_error"}), 502
         groups = extract_list(r, "groups")
+        if not groups:
+            return jsonify({"ok": False, "error": "bridge_returned_empty", "hint": "bridge may still be initializing"}), 503
         col_line_cache.update_one(
             {"user_id": uid},
             {"$set": {"groups": groups, "updated_at": datetime.utcnow()}},
