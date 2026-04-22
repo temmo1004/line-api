@@ -252,6 +252,28 @@ def api_v1_groups():
     return jsonify({"ok": True, "count": len(groups), "groups": groups})
 
 
+@app.route("/v1/groups/refresh", methods=["POST"])
+@api_key_required("read")
+@limiter.limit("10 per minute")
+def api_v1_groups_refresh():
+    uid = request.api_user_id
+    try:
+        r = bridge_get("/groups", timeout=30, user_id=uid)
+        if not r.ok:
+            return jsonify({"ok": False, "error": "bridge_error"}), 502
+        data = r.json()
+        groups = data if isinstance(data, list) else (data.get("groups") or [])
+        col_line_cache.update_one(
+            {"user_id": uid},
+            {"$set": {"groups": groups, "updated_at": datetime.utcnow()}},
+            upsert=True,
+        )
+        return jsonify({"ok": True, "groups_count": len(groups)})
+    except Exception as e:
+        logging.warning("[v1/groups/refresh] uid=%s: %s", uid, e)
+        return jsonify({"ok": False, "error": "bridge_unreachable"}), 503
+
+
 @app.route("/v1/send", methods=["POST"])
 @api_key_required("send")
 @limiter.limit("60 per minute")
@@ -309,7 +331,8 @@ def api_v1_broadcast():
     def _one(mid):
         try:
             r = bridge_post("/send", {"to": mid, "text": text}, timeout=15, user_id=uid)
-            return {"to": mid, "ok": bool(r.ok and (r.json() or {}).get("ok"))}
+            d = r.json() if r.ok else {}
+            return {"to": mid, "ok": bool(isinstance(d, dict) and d.get("ok"))}
         except Exception as e:
             return {"to": mid, "ok": False, "error": str(e)[:60]}
 
@@ -417,7 +440,7 @@ def api_v1_chats():
     ]
     rows = list(col_messages.aggregate(pipeline))
     cache = col_line_cache.find_one({"user_id": uid}) or {}
-    contacts = {c["mid"]: c for c in (cache.get("contacts") or [])}
+    contacts = {c["mid"]: c for c in (cache.get("contacts") or []) if c.get("mid")}
     chats = []
     for r in rows:
         peer = r["_id"]
