@@ -520,6 +520,30 @@ def api_hook_state():
     return jsonify({"ok": True})
 
 
+@app.route("/v1/admin/fix-peer", methods=["POST"])
+@api_key_required("admin")
+@limiter.limit("5 per minute")
+def api_v1_fix_peer():
+    """One-shot: fix sent messages where peer was incorrectly set to own MID."""
+    uid = request.api_user_id
+    user = col_users.find_one({"_id": ObjectId(uid)})
+    self_mid = (user or {}).get("line_mid", "").strip()
+    if not self_mid:
+        return jsonify({"ok": False, "error": "line_mid not set for user"}), 400
+    broken = list(col_messages.find(
+        {"user_id": uid, "from": self_mid, "peer": self_mid, "to": {"$exists": True, "$ne": None}},
+        {"_id": 1, "to": 1},
+    ))
+    fixed = 0
+    for m in broken:
+        to_mid = m.get("to")
+        if to_mid and to_mid != self_mid:
+            col_messages.update_one({"_id": m["_id"]}, {"$set": {"peer": to_mid}})
+            fixed += 1
+    logging.info("[fix-peer] uid=%s self_mid=%s broken=%d fixed=%d", uid, self_mid, len(broken), fixed)
+    return jsonify({"ok": True, "self_mid": self_mid, "broken": len(broken), "fixed": fixed})
+
+
 @app.route("/")
 def index():
     return jsonify({
