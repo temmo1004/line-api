@@ -178,7 +178,7 @@ def api_v1_qr():
 def api_v1_qr_status():
     uid = request.api_user_id
     try:
-        r = bridge_get("/status", timeout=5, user_id=uid)
+        r = bridge_get("/status", timeout=2, user_id=uid)
         d = r.json() if r.ok else {}
         logged_in = d.get("loggedIn", False)
         pin = d.get("pin")
@@ -258,7 +258,7 @@ def api_v1_contacts():
 def api_v1_contacts_refresh():
     uid = request.api_user_id
     try:
-        r = bridge_get("/contacts", timeout=30, user_id=uid)
+        r = bridge_get("/contacts", timeout=10, user_id=uid)
         if not r.ok:
             return jsonify({"ok": False, "error": "bridge_error"}), 502
         contacts = extract_list(r, "contacts")
@@ -291,7 +291,7 @@ def api_v1_groups():
 def api_v1_groups_refresh():
     uid = request.api_user_id
     try:
-        r = bridge_get("/groups", timeout=30, user_id=uid)
+        r = bridge_get("/groups", timeout=10, user_id=uid)
         if not r.ok:
             return jsonify({"ok": False, "error": "bridge_error"}), 502
         groups = extract_list(r, "groups")
@@ -549,7 +549,7 @@ def api_v1_messages_sync():
         limit = min(int(request.args.get("limit", "500")), 2000)
     except (ValueError, TypeError):
         limit = 500
-    r = bridge_get(f"/messages?limit={limit}", timeout=30, user_id=uid)
+    r = bridge_get(f"/messages?limit={limit}", timeout=15, user_id=uid)
     if not r.ok:
         return jsonify({"ok": False, "error": "bridge_error", "status": r.status_code}), 502
     raw_msgs = extract_list(r, "messages")
@@ -721,7 +721,7 @@ def api_v1_image(message_id):
         return jsonify({"ok": False, "error": "chat_id required"}), 400
     import requests as _req
     from flask import Response
-    r = bridge_get(f"/image/{message_id}?chat_id={chat_id}", timeout=30, user_id=uid)
+    r = bridge_get(f"/image/{message_id}?chat_id={chat_id}", timeout=15, user_id=uid)
     if r.ok:
         return Response(r.content, content_type=r.headers.get("Content-Type", "image/jpeg"))
     return jsonify({"ok": False, "error": "image_not_found"}), 404
