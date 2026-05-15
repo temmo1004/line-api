@@ -320,10 +320,22 @@ def api_v1_send():
         return jsonify({"ok": False, "error": "to and text required"}), 400
     try:
         r = bridge_post("/send", {"to": to, "text": text}, timeout=30, user_id=uid)
-        return jsonify(r.json() if r.ok else {"ok": False, "error": "send failed", "status": r.status_code})
+        if r.ok:
+            return jsonify(r.json())
+        # Bridge returned non-2xx. Pre-fix we swallowed the body and lied
+        # to callers with generic "send failed", making prod failures
+        # un-diagnosable. Pass the bridge body through so realty-line can
+        # log it, and also log here with the resolved endpoint so we know
+        # WHICH bridge container failed.
+        body_preview = (r.text or "")[:500]
+        logging.warning("[v1/send] bridge non-ok uid=%s status=%s body=%s",
+                        uid, r.status_code, body_preview)
+        return jsonify({"ok": False, "error": "bridge_http_error",
+                        "status": r.status_code, "bridge_body": body_preview}), 502
     except Exception as e:
-        logging.warning(f"[v1/send] uid={uid} error: {e}")
-        return jsonify({"ok": False, "error": "send failed"}), 502
+        logging.warning(f"[v1/send] uid={uid} exception: {e!r}")
+        return jsonify({"ok": False, "error": "bridge_unreachable",
+                        "detail": repr(e)[:200]}), 502
 
 
 @app.route("/v1/send-image", methods=["POST"])
@@ -343,10 +355,17 @@ def api_v1_send_image():
             "imageBase64": img_b64,
             "mimeType": data.get("mime_type") or auto_mime,
         }, timeout=60, user_id=uid)
-        return jsonify(r.json() if r.ok else {"ok": False, "error": "send failed"})
+        if r.ok:
+            return jsonify(r.json())
+        body_preview = (r.text or "")[:500]
+        logging.warning("[v1/send-image] bridge non-ok uid=%s status=%s body=%s",
+                        uid, r.status_code, body_preview)
+        return jsonify({"ok": False, "error": "bridge_http_error",
+                        "status": r.status_code, "bridge_body": body_preview}), 502
     except Exception as e:
-        logging.warning(f"[v1/send-image] uid={uid} error: {e}")
-        return jsonify({"ok": False, "error": "send failed"}), 502
+        logging.warning(f"[v1/send-image] uid={uid} exception: {e!r}")
+        return jsonify({"ok": False, "error": "bridge_unreachable",
+                        "detail": repr(e)[:200]}), 502
 
 
 @app.route("/v1/broadcast", methods=["POST"])
