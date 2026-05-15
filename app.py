@@ -322,11 +322,14 @@ def api_v1_send():
         r = bridge_post("/send", {"to": to, "text": text}, timeout=30, user_id=uid)
         if r.ok:
             return jsonify(r.json())
-        # Bridge returned non-2xx. Pre-fix we swallowed the body and lied
-        # to callers with generic "send failed", making prod failures
-        # un-diagnosable. Pass the bridge body through so realty-line can
-        # log it, and also log here with the resolved endpoint so we know
-        # WHICH bridge container failed.
+        # Bridge 409 = chat_not_initialized (peer has no chat session in LINE
+        # Chrome ext). Pass through with same status so realty-line can
+        # render the localized hint instead of generic "send failed".
+        if r.status_code == 409:
+            try:
+                return jsonify(r.json()), 409
+            except Exception:
+                pass
         body_preview = (r.text or "")[:500]
         logging.warning("[v1/send] bridge non-ok uid=%s status=%s body=%s",
                         uid, r.status_code, body_preview)
@@ -357,6 +360,11 @@ def api_v1_send_image():
         }, timeout=60, user_id=uid)
         if r.ok:
             return jsonify(r.json())
+        if r.status_code == 409:
+            try:
+                return jsonify(r.json()), 409
+            except Exception:
+                pass
         body_preview = (r.text or "")[:500]
         logging.warning("[v1/send-image] bridge non-ok uid=%s status=%s body=%s",
                         uid, r.status_code, body_preview)
