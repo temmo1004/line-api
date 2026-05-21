@@ -26,14 +26,33 @@ def _headers(token):
     return {"Authorization": f"Bearer {token}"} if token else {}
 
 
+def _touch_user(user_id):
+    if not user_id or not ORCHESTRATOR_URL or not ORCHESTRATOR_TOKEN:
+        return
+    try:
+        requests.post(
+            f"{ORCHESTRATOR_URL}/touch/{user_id}",
+            headers={"X-Admin-Token": ORCHESTRATOR_TOKEN},
+            timeout=2,
+        )
+    except Exception:
+        pass  # touch failures must not break bridge calls
+
+
 def bridge_get(path, timeout=8, user_id=None):
     endpoint, token = resolve_bridge(user_id)
-    return requests.get(f"{endpoint}{path}", headers=_headers(token), timeout=timeout)
+    r = requests.get(f"{endpoint}{path}", headers=_headers(token), timeout=timeout)
+    if user_id and r.status_code < 500:
+        _touch_user(user_id)
+    return r
 
 
 def bridge_post(path, payload, timeout=30, user_id=None):
     endpoint, token = resolve_bridge(user_id)
-    return requests.post(f"{endpoint}{path}", json=payload, headers=_headers(token), timeout=timeout)
+    r = requests.post(f"{endpoint}{path}", json=payload, headers=_headers(token), timeout=timeout)
+    if user_id and r.status_code < 500:
+        _touch_user(user_id)
+    return r
 
 
 def extract_list(response, key="items"):
