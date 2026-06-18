@@ -353,11 +353,17 @@ def api_v1_send_image():
         return jsonify({"ok": False, "error": "to and image_base64 required"}), 400
     img_b64, auto_mime = strip_data_uri(img)
     try:
-        r = bridge_post("/send-image", {
+        _body = {
             "to": to,
             "imageBase64": img_b64,
             "mimeType": data.get("mime_type") or auto_mime,
-        }, timeout=60, user_id=uid)
+        }
+        # 帶 text → bridge 走 combo（開一次聊天室送文字+圖，最快）。新版 bridge 才支援；
+        # 舊版 bridge 會忽略 text、只送圖（不會壞）。
+        _text = (data.get("text") or "").strip()
+        if _text:
+            _body["text"] = _text
+        r = bridge_post("/send-image", _body, timeout=60, user_id=uid)
         if r.ok:
             return jsonify(r.json())
         if r.status_code == 409:
