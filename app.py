@@ -267,6 +267,16 @@ def api_v1_contacts_refresh():
         contacts = extract_list(r, "contacts")
         if not contacts:
             return jsonify({"ok": False, "error": "bridge_returned_empty", "hint": "bridge may still be initializing"}), 503
+        # 防 transient 部分回傳蓋掉完整快取：bridge 偶爾 replay/session 半殘只回少量，
+        # 新數量明顯少於既有（<50%）就拒寫、保留舊的（除非 ?force=1）。否則本次修的
+        # 「漏好友」會以另一種形式復發（4058 被蓋成個位數）。
+        prev = col_line_cache.find_one({"user_id": uid}, {"contacts": 1}) or {}
+        prev_n = len(prev.get("contacts") or [])
+        if (prev_n > 50 and len(contacts) < prev_n * 0.5
+                and not request.args.get("force")):
+            return jsonify({"ok": False, "error": "refused_shrink",
+                            "prev_count": prev_n, "new_count": len(contacts),
+                            "hint": "回傳數明顯變少，疑似部分同步；?force=1 可強制覆寫"}), 409
         col_line_cache.update_one(
             {"user_id": uid},
             {"$set": {"contacts": contacts, "updated_at": datetime.utcnow()}},
