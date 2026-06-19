@@ -258,7 +258,10 @@ def api_v1_contacts():
 def api_v1_contacts_refresh():
     uid = request.api_user_id
     try:
-        r = bridge_get("/contacts", timeout=10, user_id=uid)
+        # 用 /contacts/full（權威全量：replay getAllContactIds ∪ Redux contactList）而非
+        # /contacts（只讀部分來源，會漏好友——志豪 173 vs 實際 4058 的根因）。
+        # 全量較慢→timeout 拉長。
+        r = bridge_get("/contacts/full", timeout=60, user_id=uid)
         if not r.ok:
             return jsonify({"ok": False, "error": "bridge_error"}), 502
         contacts = extract_list(r, "contacts")
