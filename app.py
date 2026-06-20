@@ -288,6 +288,45 @@ def api_v1_contacts_refresh():
         return jsonify({"ok": False, "error": "bridge_unreachable"}), 503
 
 
+@app.route("/v1/contacts/pictures-merge", methods=["POST"])
+@api_key_required("read")
+@limiter.limit("10 per minute")
+def api_v1_contacts_pictures_merge():
+    """把 bridge 即時（~808 人、有 picture）的頭像疊加到權威全量快取
+    （~1330 人、無 picture）上——以 mid 為鍵，只補 picture，不增不刪任何人。
+    絕對不用 808 那份覆蓋掉 1330 份，避免好友清單縮水。
+    """
+    uid = request.api_user_id
+    try:
+        r = bridge_get("/contacts", timeout=15, user_id=uid)
+        if not r.ok:
+            return jsonify({"ok": False, "error": "bridge_error"}), 502
+        pics = {c["mid"]: c["picture"]
+                for c in extract_list(r, "contacts")
+                if c.get("mid") and c.get("picture")}
+        cache = col_line_cache.find_one({"user_id": uid}) or {}
+        contacts = cache.get("contacts") or []
+        if not contacts:
+            return jsonify({"ok": False, "error": "no_cached_contacts",
+                            "hint": "run /v1/contacts/refresh first; "
+                                    "won't write empty list"}), 409
+        n = 0
+        for c in contacts:
+            p = pics.get(c.get("mid"))
+            if p:
+                c["picture"] = p
+                n += 1
+        col_line_cache.update_one(
+            {"user_id": uid},
+            {"$set": {"contacts": contacts, "updated_at": datetime.utcnow()}},
+        )
+        return jsonify({"ok": True, "merged": n, "total": len(contacts),
+                        "had_pics": len(pics)})
+    except Exception as e:
+        logging.warning("[v1/contacts/pictures-merge] uid=%s: %s", uid, e)
+        return jsonify({"ok": False, "error": "bridge_unreachable"}), 503
+
+
 @app.route("/v1/groups", methods=["GET"])
 @api_key_required("read")
 @limiter.limit("30 per minute")
